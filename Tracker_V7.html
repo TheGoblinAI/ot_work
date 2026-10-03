@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Presales Workload Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --p950:#2e1065; --p900:#4c1d95; --p800:#5b21b6; --p700:#6d28d9; --p600:#7c3aed; --p500:#8b5cf6;
+  --p400:#a78bfa; --p300:#c4b5fd; --p200:#ddd6fe; --p100:#ede9fe; --p50:#f5f3ff;
+  --ink:#1e1b2e; --muted:#5f5877; --faint:#968fae; --line:#e6e1f2; --line2:#f0ecf8; --bg:#faf8fe;
+  --y:#facc15; --y-bg:#fefce8; --y-line:#fde047; --y-ink:#854d0e;
+  --r:#dc2626; --r-bg:#fee2e2; --r-ink:#b91c1c;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; background: #fff; color: var(--ink); font-family: 'Segoe UI', system-ui, sans-serif; display: flex; flex-direction: column; font-size: 13px; }
+a { text-decoration: none; }
+button { font-family: inherit; }
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+#header {
+  background: linear-gradient(135deg, var(--p950) 0%, var(--p900) 100%);
+  padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;
+}
+#header-left .title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; letter-spacing: -0.3px; color: #fff; }
+#header-left .logo {
+  width: 30px; height: 30px; background: linear-gradient(135deg, var(--p600), var(--p400)); border-radius: 7px;
+  display: flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; font-weight: 800; flex-shrink: 0;
+}
+#header-left .sub { font-size: 11px; color: var(--p300); margin-top: 3px; margin-left: 40px; letter-spacing: 0.3px; }
+#header-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.stat-card {
+  background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.16); border-radius: 8px;
+  padding: 8px 16px; min-width: 90px; text-align: center; transition: background .15s, border-color .15s;
+}
+.stat-card.clickable { cursor: pointer; }
+.stat-card.clickable:hover { background: rgba(255,255,255,0.16); }
+.stat-card.flagged-stat { border-color: rgba(250,204,21,0.45); background: rgba(250,204,21,0.10); }
+.stat-card.active-quick { outline: 2px solid var(--y); outline-offset: 1px; }
+.stat-value { font-size: 20px; font-weight: 700; color: #fff; line-height: 1; }
+.stat-value.accent { color: var(--p300); }
+.stat-value.warn   { color: var(--y); }
+.stat-value.alert  { color: #fff; }
+.stat-card.has-overdue { border-color: rgba(220,38,38,0.7); background: rgba(220,38,38,0.22); }
+.stat-label { font-size: 10px; color: var(--p300); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+
+/* ── Toolbar (sticky) ─────────────────────────────────────────────────── */
+#toolbar {
+  position: sticky; top: 0; z-index: 20;
+  background: #fff; border-bottom: 1px solid var(--line); padding: 10px 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(46,16,101,0.05);
+}
+#toolbar-left, #toolbar-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type="text"], input[type="search"], input[type="date"], select.filter-select {
+  background: #fff; border: 1px solid #d4cde6; border-radius: 6px; color: var(--muted); padding: 6px 10px;
+  font-size: 12px; outline: none; font-family: inherit; transition: border-color .15s;
+}
+select.filter-select { cursor: pointer; }
+input:focus, select.filter-select:focus { border-color: var(--p600); color: var(--ink); }
+#search-input { color: var(--ink); width: 200px; }
+
+.view-toggle { display: flex; background: var(--p50); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.view-btn { background: transparent; border: none; color: var(--muted); padding: 5px 12px; font-size: 12px; cursor: pointer; transition: background .15s, color .15s; white-space: nowrap; }
+.view-btn.active { background: var(--p700); color: #fff; }
+.view-btn:hover:not(.active) { background: var(--p100); color: var(--p900); }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--p800), var(--p600)); border: none; border-radius: 6px; color: #fff;
+  padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: opacity .15s;
+}
+.btn-primary:hover { opacity: .88; }
+.btn-secondary {
+  background: #fff; border: 1px solid #d4cde6; border-radius: 6px; color: var(--muted); padding: 6px 12px;
+  font-size: 12px; cursor: pointer; white-space: nowrap; transition: border-color .15s, color .15s;
+}
+.btn-secondary:hover { border-color: var(--p600); color: var(--p800); }
+.btn-secondary.flag-active { border-color: var(--y); background: var(--y-bg); color: var(--y-ink); }
+.btn-sync { background: var(--p50); border: 1px solid var(--p400); color: var(--p800); font-weight: 600; }
+.btn-sync:hover { background: var(--p100); }
+.btn-danger { background: var(--r); border: none; border-radius: 6px; color: #fff; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-danger:hover { background: var(--r-ink); }
+
+/* ── Content ──────────────────────────────────────────────────────────── */
+#content { flex: 1; padding: 20px 28px; overflow-x: auto; background: var(--bg); }
+
+/* ── Table ────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); background: #fff; box-shadow: 0 1px 4px rgba(46,16,101,0.06); }
+table { width: 100%; border-collapse: collapse; }
+th {
+  background: var(--p50); color: var(--muted); text-align: left; padding: 10px 14px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .7px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+td { padding: 9px 14px; border-bottom: 1px solid var(--line2); vertical-align: middle; background: #fff; }
+body.compact td { padding: 4px 10px; }
+body.compact th { padding: 7px 10px; }
+body.compact { font-size: 12px; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--p50); }
+tbody tr.row-flagged td { background: var(--y-bg); }
+tbody tr.row-flagged:hover td { background: #fef9c3; }
+tbody tr.row-closed td { opacity: .62; }
+
+.opp-name { font-weight: 600; color: var(--ink); font-size: 13px; }
+.account-text { font-size: 12px; color: var(--muted); }
+.ce-text, .sse-text { font-size: 12px; color: var(--faint); }
+.value-text { color: var(--p800); font-weight: 700; font-size: 13px; }
+.date-text { color: var(--muted); font-size: 12px; }
+.step-text { color: var(--faint); font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.type-pill { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--p800); background: var(--p100); border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+.type-pill.done { background: var(--p950); color: #fff; }
+
+.flag-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; display: inline-block; margin: 1px; white-space: nowrap; letter-spacing: .2px; cursor: help; }
+.flag-value  { background: #fef08a; color: var(--y-ink); border: 1px solid var(--y-line); }
+.flag-pushed { background: #fef9c3; color: var(--y-ink); border: 1px solid var(--y); }
+.card-flag-strip { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 5px; }
+
+.badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; letter-spacing: .3px; color: var(--p900); }
+.badge .sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.priority-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.priority-text { font-size: 12px; color: var(--muted); }
+.product-list { display: flex; flex-wrap: wrap; gap: 3px; }
+.product-tag { background: var(--p50); color: var(--p800); font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; letter-spacing: .2px; border: 1px solid var(--p100); }
+.actions-cell { display: flex; gap: 3px; align-items: center; }
+.icon-btn { background: none; border: none; color: var(--p300); cursor: pointer; font-size: 13px; padding: 3px 5px; border-radius: 4px; transition: background .15s, color .15s; }
+.icon-btn:hover { color: var(--p800); background: var(--p100); }
+.icon-btn.done-on { color: var(--p800); }
+.icon-btn.danger:hover { color: var(--r); background: var(--r-bg); }
+
+.inline-select { border: 1px solid transparent; background: transparent; font-size: 12px; color: var(--muted); border-radius: 4px; padding: 2px 2px; cursor: pointer; font-family: inherit; }
+.inline-select:hover, .inline-select:focus { border-color: var(--p300); background: #fff; outline: none; }
+
+.chip { font-size: 10px; font-weight: 700; color: var(--p800); background: var(--p50); border: 1px solid var(--p200); border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+.chip-plain { font-size: 10px; font-weight: 600; color: var(--faint); }
+.chip-other { color: var(--p900); background: var(--p100); border-color: var(--p300); }
+.chip-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.due { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 2px 7px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); background: #fff; }
+.due.soon { background: var(--y-bg); border-color: var(--y); color: var(--y-ink); }
+.due.overdue { background: var(--r-bg); border-color: #fca5a5; color: var(--r-ink); }
+
+/* ── Cards (pipeline / kanban / today) ────────────────────────────────── */
+.kanban-wrap { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 20px; }
+.kanban-col { min-width: 230px; max-width: 250px; flex-shrink: 0; }
+.kanban-col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 7px 10px; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 1px 3px rgba(46,16,101,0.05); }
+.kanban-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.kanban-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; flex: 1; }
+.kanban-count { font-size: 11px; background: var(--p100); color: var(--p800); border-radius: 10px; padding: 1px 7px; font-weight: 700; }
+.kanban-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; margin-bottom: 8px; transition: border-color .15s, box-shadow .15s; box-shadow: 0 1px 3px rgba(46,16,101,0.05); }
+.kanban-card.card-has-flag { border-color: var(--y-line); }
+.kanban-card.card-closed { opacity: .65; }
+.kanban-card:hover { border-color: var(--p400); box-shadow: 0 2px 8px rgba(124,58,237,0.14); }
+.kanban-card.card-has-flag:hover { border-color: var(--y); box-shadow: 0 2px 8px rgba(250,204,21,0.2); }
+.kanban-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.kanban-opp-name { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; margin-right: 6px; line-height: 1.3; }
+.kanban-card-actions { display: flex; gap: 1px; }
+.action-info { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 5px; }
+.ce-small { font-size: 11px; color: var(--faint); margin-bottom: 6px; }
+.card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 7px; }
+.card-foot .pri { font-size: 11px; font-weight: 700; }
+.step-line { font-size: 11px; color: var(--faint); margin-top: 6px; line-height: 1.4; }
+
+.action-wrap { display: flex; gap: 16px; }
+.action-col { flex: 1; min-width: 290px; display: flex; flex-direction: column; }
+.action-col-header { background: #fff; border: 1px solid var(--line); border-top-width: 3px; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; box-shadow: 0 1px 3px rgba(46,16,101,0.05); }
+.action-col-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.action-col-sub { font-size: 11px; color: var(--faint); margin-top: 1px; }
+.action-col-count { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.action-card-list { display: flex; flex-direction: column; }
+.action-empty { text-align: center; color: var(--p300); font-size: 12px; padding: 28px 0; border: 1px dashed var(--line); border-radius: 8px; font-style: italic; }
+.move-buttons { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding-top: 9px; border-top: 1px solid var(--line2); margin-top: 8px; }
+.move-label { font-size: 10px; color: var(--faint); margin-right: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.move-btn { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: transparent; border: 1px solid; cursor: pointer; font-weight: 600; transition: background .15s; }
+.move-btn:hover { background: var(--p50); }
+.action-hint { font-size: 11px; color: var(--faint); }
+
+.today-sec { margin-bottom: 26px; }
+.today-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.today-title { font-size: 14px; font-weight: 700; color: var(--ink); }
+.today-sub { font-size: 11px; color: var(--faint); }
+.today-count { font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 8px; }
+.today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 0 12px; align-items: start; }
+.reason-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 7px; }
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.empty-state { text-align: center; padding: 60px 20px; font-size: 14px; }
+.empty-state .empty-icon { font-size: 36px; margin-bottom: 12px; color: var(--p300); }
+.empty-state .empty-title { font-size: 15px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.empty-state .empty-sub { font-size: 12px; color: var(--faint); }
+
+/* ── Modal ────────────────────────────────────────────────────────────── */
+.overlay { position: fixed; inset: 0; background: rgba(46,16,101,0.5); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+.modal { background: #fff; border: 1px solid var(--line); border-radius: 12px; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(46,16,101,0.25); }
+.modal.wide { max-width: 780px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 22px; border-bottom: 1px solid var(--line); background: var(--p50); }
+.modal-title { font-size: 15px; font-weight: 700; color: var(--p950); }
+.modal-close { background: none; border: none; color: var(--faint); font-size: 15px; cursor: pointer; border-radius: 4px; padding: 2px 6px; }
+.modal-close:hover { color: var(--p800); }
+.modal-body { flex: 1; overflow-y: auto; padding: 18px 22px; }
+.modal-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--p50); }
+.modal-footer .grow { flex: 1; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.form-row { display: flex; gap: 14px; }
+.field { margin-bottom: 13px; flex: 1; min-width: 0; }
+.field label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px; }
+.field input, .field select, .field textarea { width: 100%; background: #fff; border: 1px solid #d4cde6; border-radius: 6px; color: var(--ink); padding: 7px 11px; font-size: 13px; outline: none; font-family: inherit; transition: border-color .15s; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--p600); box-shadow: 0 0 0 3px rgba(124,58,237,0.12); }
+.field textarea { resize: vertical; min-height: 70px; }
+.type-switch { display: inline-flex; border: 1px solid var(--p300); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+.type-switch button { border: none; background: #fff; color: var(--muted); padding: 7px 16px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.type-switch button.active { background: var(--p700); color: #fff; }
+.product-grid { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.product-check { font-size: 11px; padding: 4px 10px; border-radius: 5px; background: var(--p50); border: 1px solid var(--line); color: var(--muted); cursor: pointer; user-select: none; transition: all .15s; font-weight: 600; }
+.product-check.active { background: var(--p100); border-color: var(--p600); color: var(--p900); }
+.product-check:hover:not(.active) { border-color: var(--p400); color: var(--p800); }
+.product-add { width: 150px !important; padding: 4px 8px !important; font-size: 11px !important; }
+.flag-edit-row { background: var(--y-bg); border: 1px solid var(--y-line); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--y-ink); }
+
+.confirm-box { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 28px 30px; max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(46,16,101,0.25); }
+.confirm-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: var(--p950); }
+.confirm-sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; line-height: 1.5; }
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+#toast { position: fixed; bottom: 24px; right: 24px; border-radius: 8px; padding: 9px 16px; color: #fff; font-size: 12px; font-weight: 600; z-index: 200; box-shadow: 0 4px 20px rgba(46,16,101,0.3); display: none; letter-spacing: .2px; max-width: 420px; }
+#drop-hint { position: fixed; inset: 12px; border: 3px dashed var(--p500); border-radius: 14px; background: rgba(124,58,237,0.10); z-index: 150; display: none; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: var(--p900); pointer-events: none; }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--p800); background: var(--p100); }
+th.sort-active { color: var(--p800); }
+
+/* ── Sync preview ─────────────────────────────────────────────────────── */
+.sync-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
+.sync-tile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 8px; text-align: center; background: var(--p50); }
+.sync-tile .n { font-size: 22px; font-weight: 700; color: var(--p900); line-height: 1; }
+.sync-tile .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+.sync-tile.flag { background: var(--y-bg); border-color: var(--y-line); }
+.sync-tile.flag .n { color: var(--y-ink); }
+.sync-warn { background: var(--y-bg); border: 1px solid var(--y-line); color: var(--y-ink); border-radius: 8px; padding: 8px 12px; font-size: 12px; margin-bottom: 8px; line-height: 1.45; }
+.sync-sec { margin-top: 14px; }
+.sync-sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--p800); margin-bottom: 6px; }
+.sync-item { font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--line2); color: var(--ink); }
+.sync-item .sub { color: var(--muted); font-size: 11px; }
+.sync-item details summary { cursor: pointer; font-weight: 600; }
+.sync-item .chg { font-size: 11px; color: var(--muted); padding: 2px 0 0 14px; }
+.sync-item .chg b { color: var(--p800); font-weight: 600; }
+
+/* ── Report ───────────────────────────────────────────────────────────── */
+.report-grid { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+.report-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(46,16,101,0.06); }
+.report-card-header { background: var(--p50); border-bottom: 1px solid var(--line); padding: 12px 18px; font-size: 12px; font-weight: 700; color: var(--p900); text-transform: uppercase; letter-spacing: .5px; }
+.report-table { width: 100%; border-collapse: collapse; }
+.report-table th { background: var(--p50); color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; padding: 8px 14px; text-align: left; border-bottom: 1px solid var(--line); }
+.report-table th.num, .report-table td.num { text-align: right; }
+.report-table td { padding: 9px 14px; border-bottom: 1px solid var(--line2); font-size: 13px; color: var(--ink); background: #fff; }
+.report-table tbody tr:last-child td { border-bottom: none; }
+.report-table td.num { color: var(--p800); font-weight: 600; }
+.report-table tfoot td { padding: 9px 14px; font-weight: 700; font-size: 13px; color: var(--ink); background: var(--p50); border-top: 2px solid var(--line); }
+.report-table tfoot td.num { color: var(--p800); }
+.chart-wrap { padding: 20px 20px 12px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.08); }
+
+@media (max-width: 900px) {
+  #header, #toolbar, #content { padding-left: 14px; padding-right: 14px; }
+  .report-grid { grid-template-columns: 1fr; }
+  .sync-tiles { grid-template-columns: repeat(3, 1fr); }
+  .action-wrap { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div id="header-left">
+    <div class="title"><span class="logo">◈</span> Presales Workload</div>
+    <div class="sub">OpenText Solutions Consulting · <span id="last-sync">Never synced</span></div>
+  </div>
+  <div id="header-stats">
+    <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-value accent" id="stat-active">0</div><div class="stat-label">Active</div></div>
+    <div class="stat-card"><div class="stat-value" id="stat-value">$0K</div><div class="stat-label">Pipeline</div></div>
+    <div class="stat-card flagged-stat clickable" id="card-flagged" onclick="toggleQuick('flagged')" title="Click to filter flagged">
+      <div class="stat-value warn" id="stat-flagged">0</div><div class="stat-label">🚩 Flagged</div>
+    </div>
+    <div class="stat-card clickable" id="card-overdue" onclick="toggleQuick('overdue')" title="Click to filter overdue">
+      <div class="stat-value alert" id="stat-overdue">0</div><div class="stat-label">Overdue</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <div id="toolbar-left">
+    <input type="search" id="search-input" placeholder="Search name, account, category…" oninput="render()" />
+    <select class="filter-select" id="filter-type" onchange="render()">
+      <option value="">All Types</option><option value="opp">Salesforce Opps</option><option value="other">Other Work</option>
+    </select>
+    <select class="filter-select" id="filter-stage" onchange="render()">
+      <option value="">All Stages</option>
+      <option>1 - Identify Prospect</option><option>2 - Gain Access</option><option>3 - Establish Needs</option>
+      <option>4 - Develop Solution</option><option>5 - Propose Solution</option>
+      <option>6 - Secure Agreement</option><option>7 - Purchase Order In</option><option>Won and Closed</option>
+    </select>
+    <select class="filter-select" id="filter-priority" onchange="render()">
+      <option value="">All Priorities</option><option>High</option><option>Medium</option><option>Low</option>
+    </select>
+    <select class="filter-select" id="filter-product" onchange="render()"></select>
+    <select class="filter-select" id="filter-quarter" onchange="render()"></select>
+    <button class="btn-secondary" id="btn-flagged" onclick="toggleQuick('flagged')">🚩 Flagged</button>
+    <button class="btn-secondary" id="btn-attention" onclick="toggleQuick('attention')" title="Flagged, overdue, or Work To Do">⚡ Needs attention</button>
+  </div>
+  <div id="toolbar-right">
+    <div class="view-toggle">
+      <button class="view-btn" data-view="today"  onclick="setView('today')">☀ Today</button>
+      <button class="view-btn" data-view="table"  onclick="setView('table')">≡ Table</button>
+      <button class="view-btn" data-view="stages" onclick="setView('stages')">▤ Pipeline</button>
+      <button class="view-btn" data-view="kanban" onclick="setView('kanban')">◉ Kanban</button>
+      <button class="view-btn" data-view="report" onclick="setView('report')">▦ Report</button>
+    </div>
+    <button class="btn-secondary" id="btn-density" onclick="toggleDensity()" title="Toggle row density">⇕ Compact</button>
+    <button class="btn-secondary btn-sync" onclick="document.getElementById('sync-file').click()" title="Pick the Salesforce report, or drag it anywhere onto this page">⟳ Sync Salesforce</button>
+    <button class="btn-secondary" id="btn-undo" style="display:none" onclick="undoSync()">↶ Undo sync</button>
+    <button class="btn-secondary" onclick="exportXLSX()">↓ Export</button>
+    <button class="btn-secondary" onclick="openImportWarning()">↑ Import</button>
+    <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importXLSX(event)" />
+    <input type="file" id="sync-file" accept=".xls,.xlsx,.htm,.html,.csv" style="display:none" onchange="handleSyncPick(event)" />
+    <button class="btn-primary" onclick="openModal()">+ Add</button>
+  </div>
+</div>
+
+<div id="content"></div>
+<div id="toast"></div>
+<div id="drop-hint">Drop the Salesforce report to sync</div>
+
+<!-- Add / Edit modal -->
+<div id="modal-overlay" class="overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">New Item</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="type-switch">
+        <button id="type-opp" onclick="setFormType('opp')">Salesforce Opp</button>
+        <button id="type-other" onclick="setFormType('other')">Other Work</button>
+      </div>
+      <div id="flag-edit-row" class="flag-edit-row" style="display:none">
+        <span id="flag-edit-text"></span>
+        <button class="btn-secondary" onclick="clearFlagFromModal()">Clear flag</button>
+      </div>
+      <div class="form-row">
+        <div class="field"><label id="lbl-title">Opportunity Name *</label><input id="f-opportunity" /></div>
+        <div class="field"><label id="lbl-account">Account *</label><input id="f-account" /></div>
+      </div>
+      <div class="form-row only-opp">
+        <div class="field"><label>CE Name</label><input id="f-ce" placeholder="e.g. Jane Smith" /></div>
+        <div class="field"><label>Region</label><select id="f-region"></select></div>
+      </div>
+      <div class="form-row only-other">
+        <div class="field"><label>Category</label><input id="f-category" list="category-list" placeholder="e.g. Enablement, RFP, Internal" /><datalist id="category-list"></datalist></div>
+        <div class="field"><label>Status</label><select id="f-status"><option>Open</option><option>Done</option></select></div>
+      </div>
+      <div class="form-row only-opp">
+        <div class="field"><label>Stage</label>
+          <select id="f-stage">
+            <option>1 - Identify Prospect</option><option>2 - Gain Access</option><option>3 - Establish Needs</option>
+            <option>4 - Develop Solution</option><option>5 - Propose Solution</option>
+            <option>6 - Secure Agreement</option><option>7 - Purchase Order In</option><option>Won and Closed</option>
+          </select>
+        </div>
+        <div class="field"><label>Quarter</label><select id="f-quarter"></select></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Priority</label><select id="f-priority"><option>High</option><option selected>Medium</option><option>Low</option></select></div>
+        <div class="field"><label>Action Status</label><select id="f-action"><option>Follow Up</option><option>Work To Do</option><option>No Action</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Due Date</label><input id="f-due" type="date" /></div>
+        <div class="field only-opp"><label>Forecast Category</label>
+          <select id="f-forecast"><option value="">— Select —</option><option>Pipeline</option><option>Best Case</option><option>Commit</option><option>Closed</option><option>Blank</option></select>
+        </div>
+      </div>
+      <div class="form-row only-opp">
+        <div class="field"><label>SSE Name</label><input id="f-sse" placeholder="e.g. Jane Smith" /></div>
+        <div class="field"><label>Deal Value ($)</label><input id="f-value" type="number" placeholder="e.g. 150000" /></div>
+      </div>
+      <div class="field only-opp"><label>Salesforce Link</label><input id="f-sflink" placeholder="https://…" /></div>
+      <div class="field"><label>Notes Link</label><input id="f-noteslink" placeholder="https://… (OneNote, Confluence, etc.)" /></div>
+      <div class="field"><label>Next Step</label><input id="f-nextstep" placeholder="e.g. Technical deep dive scheduled for…" /></div>
+      <div class="field"><label>Products</label><div class="product-grid" id="product-grid"></div></div>
+      <div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Additional context, history, blockers…"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveOpp()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sync preview -->
+<div id="sync-overlay" class="overlay" style="display:none">
+  <div class="modal wide">
+    <div class="modal-header">
+      <div class="modal-title" id="sync-title">Sync preview</div>
+      <button class="modal-close" onclick="closeSync()">✕</button>
+    </div>
+    <div class="modal-body" id="sync-body"></div>
+    <div class="modal-footer">
+      <label class="grow"><input type="checkbox" id="sync-backup" checked /> Download a backup of my current data first</label>
+      <button class="btn-secondary" onclick="closeSync()">Cancel</button>
+      <button class="btn-primary" onclick="applySync()">Apply sync</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm -->
+<div id="delete-overlay" class="overlay" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-title">Delete this item?</div>
+    <div class="confirm-sub">This action cannot be undone.</div>
+    <div class="confirm-actions">
+      <button class="btn-secondary" onclick="closeDelete()">Cancel</button>
+      <button class="btn-danger" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic confirm -->
+<div id="confirm-overlay" class="overlay" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirm-title"></div>
+    <div class="confirm-sub" id="confirm-sub"></div>
+    <div class="confirm-actions">
+      <button class="btn-secondary" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-primary" id="confirm-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import warning -->
+<div id="import-overlay" class="overlay" style="display:none">
+  <div class="confirm-box">
+    <div class="confirm-title">Replace all data?</div>
+    <div class="confirm-sub">
+      Importing will <strong>delete all current items</strong> and replace them with the data from your file.<br><br>
+      We recommend downloading a backup first so you don't lose anything.<br><br>
+      <em>To bring in this week's Salesforce report, use <strong>⟳ Sync Salesforce</strong> instead.</em>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn-secondary" onclick="closeImportWarning()">Cancel</button>
+      <button class="btn-secondary" onclick="exportXLSX(); closeImportWarning()">↓ Download backup</button>
+      <button class="btn-danger" onclick="proceedImport()">Replace &amp; Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────
+const PRODUCTS = ["VIM","Core Capture for SAP","Core Archive","Content Management","Core Content Management"];
+const BASE_REGIONS = ["EMS B2B CM North America","Content US AE East Sales","Content US Life Sciences Sales","Content US FinServ Sales","Content US Northeast Sales","Content US Southeast Sales"];
+const BASE_CATEGORIES = ["Enablement","RFP / RFI","Internal Project","Event","Demo / POC","Admin","Training"];
+const STAGES = ["1 - Identify Prospect","2 - Gain Access","3 - Establish Needs","4 - Develop Solution","5 - Propose Solution","6 - Secure Agreement","7 - Purchase Order In","Won and Closed"];
+// Stages run light → dark purple as the deal progresses
+const STAGE_COLORS = {
+  "1 - Identify Prospect":"#c4b5fd", "2 - Gain Access":"#a78bfa", "3 - Establish Needs":"#8b5cf6",
+  "4 - Develop Solution":"#7c3aed",  "5 - Propose Solution":"#6d28d9", "6 - Secure Agreement":"#5b21b6",
+  "7 - Purchase Order In":"#4c1d95", "Won and Closed":"#2e1065"
+};
+const ACTION_STATUSES = ["Follow Up","Work To Do","No Action"];
+const ACTION_COLORS   = { "Follow Up":"#ca8a04", "Work To Do":"#6d28d9", "No Action":"#968fae" };
+const ACTION_ICONS    = { "Follow Up":"◔", "Work To Do":"●", "No Action":"○" };
+const PRIORITY_COLORS = { High:"#4c1d95", Medium:"#8b5cf6", Low:"#c4b5fd" };
+const PRIORITY_ORDER  = { High:0, Medium:1, Low:2 };
+const STORAGE_KEY = "presales-opps-v1";          // same key as V6 — existing data carries over
+const META_KEY    = "presales-meta-v1";
+const SNAP_KEY    = "presales-opps-presync-v1";
+const UI_KEY      = "presales-ui-v1";
+
+// ── State ──────────────────────────────────────────────────────────────
+let opps = [];
+let meta = {};            // { lastSync }
+let ui   = { view:"table", density:"comfortable" };
+let currentView = "table";
+let editingId = null, deleteId = null;
+let formType = "opp";
+let selectedProducts = [];
+let sortCol = null, sortDir = 1;
+let quick = null;         // null | "flagged" | "overdue" | "attention"
+let syncPlan = null, syncFileName = "";
+
+const $ = id => document.getElementById(id);
+
+// ── Persistence ────────────────────────────────────────────────────────
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { showToast("Couldn't save to browser storage — export a backup now", "error"); return false; } }
+function loadData() { opps = lsGet(STORAGE_KEY, []); if (!Array.isArray(opps)) opps = []; meta = lsGet(META_KEY, {}); ui = Object.assign(ui, lsGet(UI_KEY, {})); }
+function saveData() { lsSet(STORAGE_KEY, opps); }
+function saveUi()   { lsSet(UI_KEY, ui); }
+
+// ── Utilities ──────────────────────────────────────────────────────────
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function norm(s) { return String(s ?? "").trim().toLowerCase(); }
+function isOpp(o)    { return (o.type || "opp") === "opp"; }
+function isClosed(o) { return isOpp(o) ? o.stage === "Won and Closed" : o.status === "Done"; }
+function fmt(v) { const n = Number(v); return v && isFinite(n) ? "$" + n.toLocaleString() : "—"; }
+function fmtK(v) {
+  if (!v) return "—";
+  if (v >= 1000000) return "$" + (v/1000000).toFixed(1) + "M";
+  if (v >= 1000)    return "$" + Math.round(v/1000) + "K";
+  return "$" + Math.round(v);
+}
+function showToast(msg, type = "success") {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.background = type === "error" ? "#991b1b" : "#5b21b6";
+  t.style.display = "block";
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.style.display = "none", type === "error" ? 5000 : 2800);
+}
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// Dates (due dates are stored as YYYY-MM-DD, handled in local time)
+function parseDay(s) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+function fmtDay(s) { const d = parseDay(s); return d ? d.toLocaleDateString(undefined, { day:"numeric", month:"short" }) : ""; }
+function daysUntil(s) {
+  const d = parseDay(s); if (!d) return null;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((d - t) / 86400000);
+}
+function dueState(o) {
+  if (isClosed(o) || !o.dueDate) return "";
+  const n = daysUntil(o.dueDate);
+  if (n === null) return "";
+  return n < 0 ? "overdue" : n <= 7 ? "soon" : "later";
+}
+function dueChip(o) {
+  const st = dueState(o); if (!st) return "";
+  const n = daysUntil(o.dueDate);
+  const label = st === "overdue" ? `Overdue ${Math.abs(n)}d · ${fmtDay(o.dueDate)}` : n === 0 ? "Due today" : `Due ${fmtDay(o.dueDate)}`;
+  return `<span class="due ${st === "later" ? "" : st}">${label}</span>`;
+}
+function needsAttention(o) { return !isClosed(o) && (!!o.flag || dueState(o) === "overdue" || o.actionStatus === "Work To Do"); }
+
+// Quarters: "Q4-FY2026" / "FY2026 Q4" → "Q4-2026"
+function normQuarter(q) {
+  let s = String(q ?? "").trim(); if (!s) return "";
+  s = s.replace(/-FY/gi, "-");
+  const m = /^FY\s?(\d{4})\s*[- ]?\s*Q([1-4])$/i.exec(s);
+  return m ? `Q${m[2]}-${m[1]}` : s;
+}
+function quarterKey(q) { const m = /^Q([1-4])-(\d{4})$/.exec(q || ""); return m ? (+m[2]) * 10 + (+m[1]) : 99999; }
+function allQuarters() {
+  const s = new Set();
+  for (let y = 2026; y <= 2029; y++) for (let q = 1; q <= 4; q++) if (y > 2026 || q === 4) s.add(`Q${q}-${y}`);
+  opps.forEach(o => o.quarter && s.add(o.quarter));
+  return [...s].sort((a, b) => quarterKey(a) - quarterKey(b) || a.localeCompare(b));
+}
+function allRegions()    { return [...new Set([...BASE_REGIONS, ...opps.map(o => o.region).filter(Boolean)])]; }
+function allProducts()   { return [...new Set([...PRODUCTS, ...opps.flatMap(o => o.products || [])])]; }
+function allCategories() { return [...new Set([...BASE_CATEGORIES, ...opps.map(o => o.category).filter(Boolean)])]; }
+
+function parseAmount(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  const s = String(v).trim();
+  const neg = /^\(/.test(s) || /^[A-Za-z$€£\s]*-/.test(s);
+  const c = s.replace(/[^0-9.]/g, "");
+  if (!c) return null;
+  const n = parseFloat(c);
+  return isNaN(n) ? null : (neg ? -n : n);
+}
+function amountStr(v) { const n = parseAmount(v); return n === null ? "" : String(Math.round(n * 100) / 100); }
+
+// Salesforce opportunity IDs (006…) — 15 or 18 chars; compare on the first 15
+function sfId(link) { const m = /(006[A-Za-z0-9]{12})(?:[A-Za-z0-9]{3})?/.exec(link || ""); return m ? m[1] : ""; }
+
+// ── Badges & flags ─────────────────────────────────────────────────────
+function stageBadge(stage) {
+  if (!stage) return "";
+  const c = STAGE_COLORS[stage] || "#968fae";
+  return `<span class="badge" style="background:${c}26;border:1px solid ${c}"><span class="sdot" style="background:${c}"></span>${esc(stage)}</span>`;
+}
+function actionBadge(status) {
+  const s = status || "No Action", c = ACTION_COLORS[s] || "#968fae";
+  return `<span class="badge" style="background:${c}1f;border:1px solid ${c}66;color:${c}">${ACTION_ICONS[s]} ${esc(s)}</span>`;
+}
+function flagBadges(o) {
+  if (!o.flag) return "";
+  return String(o.flag).split(/\s{2,}/).map(f => {
+    f = f.trim(); if (!f) return "";
+    const cls = f.includes("Value") ? "flag-value" : "flag-pushed";
+    return `<span class="flag-badge ${cls}" title="${esc(o.flagInfo || "")}">${esc(f)}</span>`;
+  }).join(" ");
+}
+function cardFlagStrip(o) { return o.flag ? `<div class="card-flag-strip">${flagBadges(o)}</div>` : ""; }
+
+function cardActions(o) {
+  const sf   = o.sfLink    ? `<a href="${esc(o.sfLink)}" target="_blank" rel="noopener" class="icon-btn" title="Salesforce">☁</a>` : "";
+  const note = o.notesLink ? `<a href="${esc(o.notesLink)}" target="_blank" rel="noopener" class="icon-btn" title="Notes">🗒</a>` : "";
+  const done = !isOpp(o) ? `<button class="icon-btn ${o.status === "Done" ? "done-on" : ""}" onclick="toggleDone('${o.id}')" title="${o.status === "Done" ? "Re-open" : "Mark done"}">✓</button>` : "";
+  return `${sf}${note}${done}<button class="icon-btn" onclick="openEdit('${o.id}')" title="Edit">✎</button><button class="icon-btn danger" onclick="openDelete('${o.id}')" title="Delete">✕</button>`;
+}
+
+// ── Quick filters ──────────────────────────────────────────────────────
+function toggleQuick(name) { quick = quick === name ? null : name; render(); }
+function syncQuickUi() {
+  $("btn-flagged").classList.toggle("flag-active", quick === "flagged");
+  $("btn-attention").classList.toggle("flag-active", quick === "attention");
+  $("card-flagged").classList.toggle("active-quick", quick === "flagged");
+  $("card-overdue").classList.toggle("active-quick", quick === "overdue");
+}
+
+// ── Filtering ──────────────────────────────────────────────────────────
+function getFiltered() {
+  const search  = $("search-input").value.toLowerCase();
+  const type    = $("filter-type").value;
+  const stage   = $("filter-stage").value;
+  const prio    = $("filter-priority").value;
+  const prod    = $("filter-product").value;
+  const quarter = $("filter-quarter").value;
+  return opps.filter(o => {
+    if (type    && (o.type || "opp") !== type) return false;
+    if (stage   && o.stage !== stage) return false;
+    if (prio    && o.priority !== prio) return false;
+    if (prod    && !(o.products || []).includes(prod)) return false;
+    if (quarter && o.quarter !== quarter) return false;
+    if (quick === "flagged"   && !o.flag) return false;
+    if (quick === "overdue"   && dueState(o) !== "overdue") return false;
+    if (quick === "attention" && !needsAttention(o)) return false;
+    if (search) {
+      const hay = [o.opportunity, o.account, o.category, o.nextStep, o.ceName].join(" ").toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+// ── Option lists (auto-extend from data) ───────────────────────────────
+function fillSelect(id, list, firstLabel) {
+  const el = $(id), cur = el.value;
+  el.innerHTML = (firstLabel !== undefined ? `<option value="">${firstLabel}</option>` : "") + list.map(x => `<option>${esc(x)}</option>`).join("");
+  if (list.includes(cur)) el.value = cur;
+}
+function refreshOptions() {
+  const quarters = allQuarters();
+  fillSelect("filter-product", allProducts(), "All Products");
+  fillSelect("filter-quarter", quarters, "All Quarters");
+  fillSelect("f-quarter", quarters, "— Select —");
+  fillSelect("f-region", allRegions(), "— Select —");
+  $("category-list").innerHTML = allCategories().map(c => `<option value="${esc(c)}">`).join("");
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────
+function updateStats() {
+  const only = opps.filter(isOpp);
+  $("stat-total").textContent   = opps.length;
+  $("stat-active").textContent  = opps.filter(o => !isClosed(o)).length;
+  const val = only.reduce((s, o) => s + (parseAmount(o.value) || 0), 0);
+  $("stat-value").textContent   = "$" + (val >= 1000000 ? (val/1000000).toFixed(1) + "M" : (val/1000).toFixed(0) + "K");
+  $("stat-flagged").textContent = opps.filter(o => o.flag).length;
+  const od = opps.filter(o => dueState(o) === "overdue").length;
+  $("stat-overdue").textContent = od;
+  $("card-overdue").classList.toggle("has-overdue", od > 0);
+  $("last-sync").textContent = meta.lastSync ? "Last synced " + new Date(meta.lastSync).toLocaleString(undefined, { day:"numeric", month:"short", hour:"numeric", minute:"2-digit" }) : "Never synced";
+  $("btn-undo").style.display = lsGet(SNAP_KEY, null) ? "" : "none";
+}
+
+// ── Render ─────────────────────────────────────────────────────────────
+function render() {
+  updateStats();
+  syncQuickUi();
+  const filtered = getFiltered();
+  const el = $("content");
+  if (currentView === "table")       renderTable(el, filtered);
+  else if (currentView === "today")  renderToday(el, filtered);
+  else if (currentView === "stages") renderPipeline(el, filtered);
+  else if (currentView === "kanban") renderKanban(el, filtered);
+  else                               renderReport(el);
+}
+function afterDataChange() { saveData(); refreshOptions(); render(); }
+
+function emptyState(msg, sub) {
+  return `<div class="empty-state"><div class="empty-icon">◈</div><div class="empty-title">${msg}</div><div class="empty-sub">${sub}</div></div>`;
+}
+function emptyFor(filtered) {
+  return opps.length === 0
+    ? emptyState("Nothing here yet", "Click “+ Add”, drop your Salesforce report on the page, or import an Excel file to get started.")
+    : emptyState("No results match your filters", "Try adjusting your search or filter criteria.");
+}
+
+// ── Shared card ────────────────────────────────────────────────────────
+function cardHtml(o, opt = {}) {
+  const other = !isOpp(o);
+  const prods = (o.products || []).slice(0, 4).map(p => `<span class="product-tag">${esc(p)}</span>`).join("")
+              + ((o.products || []).length > 4 ? `<span class="product-tag">+${o.products.length - 4}</span>` : "");
+  const people = [o.ceName ? "CE: " + esc(o.ceName) : "", o.sseName ? "SSE: " + esc(o.sseName) : ""].filter(Boolean).join(" · ");
+  const meta = [o.forecast ? `<span class="chip">${esc(o.forecast)}</span>` : "", o.quarter ? `<span class="chip-plain">${esc(o.quarter)}</span>` : "", dueChip(o)].filter(Boolean).join("");
+  const tag = other ? `<span class="chip chip-other">${esc(o.category || "Other work")}</span>` : (opt.stage ? stageBadge(o.stage) : "");
+  const pc = PRIORITY_COLORS[o.priority] || "#8b5cf6";
+  let move = "";
+  if (opt.move) {
+    const cur = opt.move;
+    move = `<div class="move-buttons"><span class="move-label">Move to:</span>` +
+      ACTION_STATUSES.filter(s => s !== cur).map(s => `<button class="move-btn" style="border-color:${ACTION_COLORS[s]}88;color:${ACTION_COLORS[s]}" onclick="moveOpp('${o.id}','${s}')">${ACTION_ICONS[s]} ${esc(s)}</button>`).join("") + `</div>`;
+  }
+  return `<div class="kanban-card${o.flag ? " card-has-flag" : ""}${isClosed(o) ? " card-closed" : ""}">
+    ${cardFlagStrip(o)}
+    <div class="kanban-card-top"><span class="kanban-opp-name">${esc(o.opportunity)}</span><div class="kanban-card-actions">${cardActions(o)}</div></div>
+    <div class="action-info">${o.account ? `<span class="account-text">${esc(o.account)}</span>` : ""}${tag}</div>
+    ${people ? `<div class="ce-small">${people}</div>` : ""}
+    ${meta ? `<div class="chip-row">${meta}</div>` : ""}
+    ${prods ? `<div class="product-list">${prods}</div>` : ""}
+    <div class="card-foot"><span class="value-text">${o.value ? fmt(o.value) : ""}</span><span class="pri" style="color:${pc}">${esc(o.priority || "")}</span></div>
+    ${o.nextStep ? `<div class="step-line">▶ ${esc(o.nextStep)}</div>` : ""}
+    ${opt.reasons ? `<div class="reason-row">${opt.reasons}</div>` : ""}
+    ${move}
+  </div>`;
+}
+
+// ── Table View ─────────────────────────────────────────────────────────
+const TABLE_COLS = [
+  { key:"flag",         label:"Flag",     nosort:true },
+  { key:"opportunity",  label:"Name" },
+  { key:"account",      label:"Account" },
+  { key:"ceName",       label:"CE" },
+  { key:"sseName",      label:"SSE" },
+  { key:"stage",        label:"Stage / Category" },
+  { key:"forecast",     label:"Forecast" },
+  { key:"actionStatus", label:"Action" },
+  { key:"priority",     label:"Priority" },
+  { key:"dueDate",      label:"Due" },
+  { key:"products",     label:"Products",  nosort:true },
+  { key:"value",        label:"Value",     num:true },
+  { key:"quarter",      label:"Quarter" },
+  { key:"nextStep",     label:"Next Step", nosort:true },
+  { key:null,           label:"",          nosort:true },
+];
+function setSort(key) { if (sortCol === key) sortDir = -sortDir; else { sortCol = key; sortDir = 1; } render(); }
+function sortedFiltered(filtered) {
+  if (!sortCol) return filtered;
+  const col = TABLE_COLS.find(c => c.key === sortCol);
+  return [...filtered].sort((a, b) => {
+    if (col && col.num) return ((parseAmount(a[sortCol]) || 0) - (parseAmount(b[sortCol]) || 0)) * sortDir;
+    if (sortCol === "quarter") return (quarterKey(a.quarter) - quarterKey(b.quarter)) * sortDir;
+    if (sortCol === "dueDate") { // empty dates always last
+      const av = a.dueDate || "", bv = b.dueDate || "";
+      if (!av && !bv) return 0; if (!av) return 1; if (!bv) return -1;
+      return av.localeCompare(bv) * sortDir;
+    }
+    if (sortCol === "priority") return ((PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9)) * sortDir;
+    const av = (sortCol === "stage" && !isOpp(a)) ? (a.category || "") : (a[sortCol] || "");
+    const bv = (sortCol === "stage" && !isOpp(b)) ? (b.category || "") : (b[sortCol] || "");
+    return String(av).localeCompare(String(bv)) * sortDir;
+  });
+}
+function selectHtml(id, field, list, cur) {
+  return `<select class="inline-select" onchange="inlineSet('${id}','${field}',this.value)">` + list.map(x => `<option${x === cur ? " selected" : ""}>${esc(x)}</option>`).join("") + `</select>`;
+}
+function renderTable(el, filtered) {
+  if (filtered.length === 0) { el.innerHTML = emptyFor(filtered); return; }
+  const sorted = sortedFiltered(filtered);
+  const heads = TABLE_COLS.map(c => {
+    if (c.nosort) return `<th>${c.label}</th>`;
+    const active = sortCol === c.key, arrow = active ? (sortDir === 1 ? " ↑" : " ↓") : "";
+    return `<th class="sortable${active ? " sort-active" : ""}" onclick="setSort('${c.key}')">${c.label}${arrow}</th>`;
+  }).join("");
+  const rows = sorted.map(o => {
+    const other = !isOpp(o);
+    const prods = (o.products || []).slice(0, 3).map(p => `<span class="product-tag">${esc(p)}</span>`).join("");
+    const more  = (o.products || []).length > 3 ? `<span class="product-tag">+${o.products.length - 3}</span>` : "";
+    const pc    = PRIORITY_COLORS[o.priority] || "#8b5cf6";
+    const cls   = [o.flag ? "row-flagged" : "", isClosed(o) ? "row-closed" : ""].filter(Boolean).join(" ");
+    const pill  = other ? `<span class="type-pill${o.status === "Done" ? " done" : ""}">${o.status === "Done" ? "✓ Done" : "Other"}</span>` : "";
+    const stageCell = other ? (o.category ? `<span class="chip chip-other">${esc(o.category)}</span>` : `<span class="date-text">—</span>`) : stageBadge(o.stage);
+    return `<tr${cls ? ` class="${cls}"` : ""}>
+      <td style="white-space:nowrap">${flagBadges(o)}</td>
+      <td><span class="opp-name">${esc(o.opportunity)}</span>${pill}</td>
+      <td><span class="account-text">${esc(o.account || "—")}</span></td>
+      <td><span class="ce-text">${esc(o.ceName || "—")}</span></td>
+      <td><span class="sse-text">${esc(o.sseName || "—")}</span></td>
+      <td>${stageCell}</td>
+      <td><span class="date-text">${esc(o.forecast || "—")}</span></td>
+      <td style="white-space:nowrap">${selectHtml(o.id, "actionStatus", ACTION_STATUSES, o.actionStatus || "No Action")}</td>
+      <td style="white-space:nowrap"><span class="priority-dot" style="background:${pc}"></span>${selectHtml(o.id, "priority", ["High","Medium","Low"], o.priority || "Medium")}</td>
+      <td style="white-space:nowrap">${dueChip(o) || (o.dueDate ? `<span class="date-text">${fmtDay(o.dueDate)}</span>` : `<span class="date-text">—</span>`)}</td>
+      <td><div class="product-list">${prods}${more}</div></td>
+      <td><span class="value-text">${other ? "—" : fmt(o.value)}</span></td>
+      <td><span class="date-text">${esc(o.quarter || "—")}</span></td>
+      <td><span class="step-text" title="${esc(o.nextStep || "")}">${esc(o.nextStep || "—")}</span></td>
+      <td><div class="actions-cell">${cardActions(o)}</div></td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<div class="table-wrap"><table><thead><tr>${heads}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function inlineSet(id, field, value) {
+  opps = opps.map(o => o.id === id ? { ...o, [field]: value } : o);
+  saveData(); render();
+}
+
+// ── Today View ─────────────────────────────────────────────────────────
+function renderToday(el, filtered) {
+  const open = filtered.filter(o => !isClosed(o));
+  const byDue  = (a, b) => (a.dueDate || "").localeCompare(b.dueDate || "");
+  const byPri  = (a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) || (parseAmount(b.value) || 0) - (parseAmount(a.value) || 0);
+  const sections = [
+    { title:"Overdue",       sub:"Past their due date",                   test: o => dueState(o) === "overdue",         sort: byDue, bg:"var(--r-bg)",  fg:"var(--r-ink)" },
+    { title:"Due this week", sub:"Due in the next 7 days",                test: o => dueState(o) === "soon",            sort: byDue, bg:"var(--y-bg)",  fg:"var(--y-ink)" },
+    { title:"Work To Do",    sub:"Marked as work to do",                  test: o => o.actionStatus === "Work To Do",   sort: byPri, bg:"var(--p100)",  fg:"var(--p900)" },
+    { title:"Flagged",       sub:"Value change or pushed since last sync", test: o => !!o.flag,                          sort: byPri, bg:"var(--y-bg)",  fg:"var(--y-ink)" },
+  ];
+  const used = new Set();
+  const html = sections.map(sec => {
+    const items = open.filter(o => !used.has(o.id) && sec.test(o)).sort(sec.sort);
+    if (!items.length) return "";
+    items.forEach(o => used.add(o.id));
+    const cards = items.map(o => {
+      const reasons = [];
+      if (dueState(o) === "overdue" && sec.title !== "Overdue") reasons.push(`<span class="due overdue">Overdue</span>`);
+      return cardHtml(o, { stage: true, reasons: reasons.join("") });
+    }).join("");
+    return `<div class="today-sec">
+      <div class="today-head"><span class="today-title">${sec.title}</span><span class="today-count" style="background:${sec.bg};color:${sec.fg}">${items.length}</span><span class="today-sub">${sec.sub}</span></div>
+      <div class="today-grid">${cards}</div></div>`;
+  }).join("");
+  el.innerHTML = html || emptyState("You're all caught up", opps.length ? "Nothing is overdue, due this week, marked Work To Do, or flagged." : "Add an item or sync your Salesforce report to get started.");
+}
+
+// ── Pipeline View (Salesforce opps by stage) ───────────────────────────
+function renderPipeline(el, filtered) {
+  const only = filtered.filter(isOpp);
+  if (only.length === 0) { el.innerHTML = emptyFor(filtered); return; }
+  const cols = STAGES.map(stage => {
+    const items = only.filter(o => o.stage === stage);
+    if (items.length === 0 && (stage === "Won and Closed" || stage === "7 - Purchase Order In")) return "";
+    const cards = items.length === 0 ? `<div class="action-empty">Nothing here</div>` : items.map(o => cardHtml(o)).join("");
+    return `<div class="kanban-col">
+      <div class="kanban-col-header"><span class="kanban-dot" style="background:${STAGE_COLORS[stage]}"></span><span class="kanban-label">${esc(stage)}</span><span class="kanban-count">${items.length}</span></div>
+      ${cards}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="kanban-wrap">${cols}</div>`;
+}
+
+// ── Kanban View (by action status, both types) ─────────────────────────
+function renderKanban(el, filtered) {
+  const cols = ACTION_STATUSES.map(status => {
+    const c = ACTION_COLORS[status];
+    const items = filtered.filter(o => (isClosed(o) ? "No Action" : (o.actionStatus || "No Action")) === status);
+    const cards = items.length === 0 ? `<div class="action-empty">Nothing here</div>` : items.map(o => cardHtml(o, { stage: true, move: status })).join("");
+    return `<div class="action-col">
+      <div class="action-col-header" style="border-top-color:${c}">
+        <span style="font-size:18px;color:${c}">${ACTION_ICONS[status]}</span>
+        <div style="flex:1"><div class="action-col-title">${esc(status)}</div><div class="action-col-sub">${items.length} ${items.length === 1 ? "item" : "items"}</div></div>
+        <div class="action-col-count" style="background:${c}1f;color:${c}">${items.length}</div>
+      </div>
+      <div class="action-card-list">${cards}</div></div>`;
+  }).join("");
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+    <span class="action-hint">Use “Move to” on each card to reassign the action status. Salesforce opps and other work share this board.</span>
+    <button class="btn-secondary" onclick="resetAllToFollowUp()" style="font-size:11px;padding:4px 10px">↺ Reset all to Follow Up</button>
+  </div><div class="action-wrap">${cols}</div>`;
+}
+function moveOpp(id, status) { opps = opps.map(o => o.id === id ? { ...o, actionStatus: status } : o); saveData(); render(); }
+function resetAllToFollowUp() {
+  askConfirm("Reset all to Follow Up?", "Every open item (Salesforce and other work) will be set to Follow Up.", "Reset", () => {
+    opps = opps.map(o => isClosed(o) ? o : { ...o, actionStatus: "Follow Up" });
+    saveData(); render(); showToast("All open items reset to Follow Up");
+  });
+}
+function toggleDone(id) {
+  opps = opps.map(o => o.id === id ? { ...o, status: o.status === "Done" ? "Open" : "Done" } : o);
+  saveData(); render();
+}
+
+// ── Report View (Salesforce opps only) ─────────────────────────────────
+function renderReport(el) {
+  const sf = opps.filter(isOpp);
+  const QUARTERS = allQuarters();
+  const qRows = QUARTERS.map(q => {
+    const items = sf.filter(o => o.quarter === q);
+    return { q, count: items.length, total: items.reduce((s, o) => s + (parseAmount(o.value) || 0), 0) };
+  }).filter(r => r.count > 0);
+  const qTotal = qRows.reduce((s, r) => s + r.total, 0), qCount = qRows.reduce((s, r) => s + r.count, 0);
+
+  const wonItems = sf.filter(o => o.stage === "Won and Closed");
+  const wonValue = wonItems.reduce((s, o) => s + (parseAmount(o.value) || 0), 0);
+  const wonByQ = QUARTERS.map(q => {
+    const items = wonItems.filter(o => o.quarter === q);
+    return { q, count: items.length, total: items.reduce((s, o) => s + (parseAmount(o.value) || 0), 0) };
+  }).filter(r => r.count > 0);
+
+  const row = r => `<tr><td>${esc(r.q)}</td><td class="num">${r.count}</td><td class="num">${fmtK(r.total)}</td></tr>`;
+  const qTableRows = qRows.map(row).join("") || `<tr><td colspan="3" style="text-align:center;color:var(--faint);padding:20px">No data</td></tr>`;
+  const wonQRows   = wonByQ.map(row).join("") || `<tr><td colspan="3" style="text-align:center;color:var(--faint);padding:16px">No closed deals yet</td></tr>`;
+
+  const REGIONS = [...new Set(sf.map(o => o.region).filter(Boolean))].sort();
+  const FORECAST_CATS = ["Commit","Best Case","Pipeline","Closed","Blank"];
+  const FC_COLORS = { "Commit":"#5b21b6", "Best Case":"#8b5cf6", "Pipeline":"#c4b5fd", "Closed":"#2e1065", "Blank":"#ede9fe" };
+  const FC_TEXT   = { "Commit":"#fff", "Best Case":"#fff", "Pipeline":"#2e1065", "Closed":"#fff", "Blank":"#5f5877" };
+  const legendHtml = FORECAST_CATS.map(fc => `<div class="legend-item"><span class="legend-dot" style="background:${FC_COLORS[fc]}"></span>${fc}</div>`).join("");
+
+  function buildChart(list) {
+    const regionData = REGIONS.map(region => {
+      const items = list.filter(o => o.region === region), vals = {};
+      FORECAST_CATS.forEach(fc => {
+        vals[fc] = items.filter(o => fc === "Blank" ? (!o.forecast || o.forecast === "Blank") : o.forecast === fc)
+                        .reduce((s, o) => s + (parseAmount(o.value) || 0), 0);
+      });
+      return { region, ...vals, total: Object.values(vals).reduce((a, b) => a + b, 0) };
+    }).filter(r => r.total > 0);
+    if (regionData.length === 0) return `<div style="text-align:center;color:var(--faint);padding:28px 0;font-size:12px;font-style:italic">No regional data for this quarter</div>`;
+
+    const W = 660, H = 280, PAD = { top:16, right:16, bottom:72, left:68 };
+    const chartW = W - PAD.left - PAD.right, chartH = H - PAD.top - PAD.bottom;
+    const niceMax = niceNumber(Math.max(...regionData.map(r => r.total)) * 1.15, 5);
+    const yTicks = Array.from({ length: 6 }, (_, i) => i * niceMax / 5);
+    const step = chartW / regionData.length, barW = Math.min(48, step * 0.62);
+    const yPx = v => PAD.top + chartH - (v / niceMax) * chartH;
+    const xPx = i => PAD.left + step * i + step / 2;
+
+    const grid = yTicks.map(t => { const y = yPx(t);
+      return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + chartW}" y2="${y}" stroke="#f0ecf8" stroke-width="1"/><text x="${PAD.left - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#968fae">${fmtK(t)}</text>`; }).join("");
+
+    const bars = regionData.map((r, i) => {
+      const cx = xPx(i), x = cx - barW / 2;
+      let seg = "", cum = 0;
+      FORECAST_CATS.forEach(fc => {
+        const val = r[fc] || 0; if (val <= 0) return;
+        const segH = (val / niceMax) * chartH, segY = yPx(cum + val);
+        seg += `<rect x="${x}" y="${segY}" width="${barW}" height="${segH}" fill="${FC_COLORS[fc]}" rx="2"/>`;
+        if (segH > 18) seg += `<text x="${cx}" y="${segY + segH / 2 + 4}" text-anchor="middle" font-size="10" font-weight="600" fill="${FC_TEXT[fc]}">${fmtK(val)}</text>`;
+        cum += val;
+      });
+      seg += `<text x="${cx}" y="${yPx(r.total) - 5}" text-anchor="middle" font-size="11" font-weight="700" fill="#1e1b2e">${fmtK(r.total)}</text>`;
+      const labelY = PAD.top + chartH + 14, lines = []; let cur = "";
+      r.region.split(" ").forEach(w => { if (cur && (cur + " " + w).length > 13) { lines.push(cur); cur = w; } else cur = cur ? cur + " " + w : w; });
+      if (cur) lines.push(cur);
+      return seg + lines.map((ln, li) => `<text x="${cx}" y="${labelY + li * 12}" text-anchor="middle" font-size="10" fill="#5f5877">${esc(ln)}</text>`).join("");
+    }).join("");
+    const yLabel = `<text transform="rotate(-90)" x="${-PAD.top - chartH / 2}" y="13" text-anchor="middle" font-size="11" fill="#968fae">Value ($)</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">${grid}${bars}${yLabel}</svg>`;
+  }
+
+  const chartCards = QUARTERS.map(q => {
+    const list = sf.filter(o => o.quarter === q); if (!list.length) return "";
+    return `<div class="report-card">
+      <div class="report-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span>${esc(q)} — Region &amp; Forecast</span><div class="chart-legend">${legendHtml}</div></div>
+      <div class="chart-wrap" style="padding:16px 16px 8px">${buildChart(list)}</div></div>`;
+  }).join("");
+
+  el.innerHTML = `<div class="report-grid">
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="report-card">
+        <div class="report-card-header">Pipeline by Quarter</div>
+        <table class="report-table"><thead><tr><th>Quarter</th><th class="num">Count</th><th class="num">Total Value</th></tr></thead>
+          <tbody>${qTableRows}</tbody>
+          <tfoot><tr><td><strong>Total</strong></td><td class="num">${qCount}</td><td class="num">${fmtK(qTotal)}</td></tr></tfoot></table>
+      </div>
+      <div class="report-card">
+        <div class="report-card-header" style="background:linear-gradient(135deg,#2e1065,#4c1d95);color:#fff;border-bottom-color:#2e1065">✓ Won &amp; Closed</div>
+        <div style="display:flex;border-bottom:1px solid var(--line)">
+          <div style="flex:1;padding:16px 18px;border-right:1px solid var(--line);text-align:center"><div style="font-size:26px;font-weight:700;color:var(--ink);line-height:1">${wonItems.length}</div><div style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-top:4px">Deals</div></div>
+          <div style="flex:1;padding:16px 18px;text-align:center"><div style="font-size:26px;font-weight:700;color:var(--p800);line-height:1">${fmtK(wonValue)}</div><div style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-top:4px">Total Value</div></div>
+        </div>
+        <table class="report-table"><thead><tr><th>Quarter</th><th class="num">Count</th><th class="num">Value</th></tr></thead><tbody>${wonQRows}</tbody></table>
+      </div>
+      <div style="font-size:11px;color:var(--faint);padding:0 4px">Report covers Salesforce opportunities only — other work has no value or region.</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      ${chartCards || `<div class="report-card"><div style="text-align:center;color:var(--faint);padding:40px;font-size:13px">No data to chart yet</div></div>`}
+    </div>
+  </div>`;
+}
+function niceNumber(val, steps) {
+  const rough = val / steps, pow = Math.pow(10, Math.floor(Math.log10(rough))), frac = rough / pow;
+  const nice = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return nice * pow * steps;
+}
+
+// ── View / density ─────────────────────────────────────────────────────
+function setView(v) {
+  currentView = v; ui.view = v; saveUi();
+  document.querySelectorAll(".view-btn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  render();
+}
+function applyDensity() {
+  document.body.classList.toggle("compact", ui.density === "compact");
+  $("btn-density").textContent = ui.density === "compact" ? "⇕ Comfortable" : "⇕ Compact";
+}
+function toggleDensity() { ui.density = ui.density === "compact" ? "comfortable" : "compact"; saveUi(); applyDensity(); }
+
+// ── Generic confirm ────────────────────────────────────────────────────
+function askConfirm(title, sub, label, fn) {
+  $("confirm-title").textContent = title; $("confirm-sub").textContent = sub; $("confirm-ok").textContent = label;
+  $("confirm-ok").onclick = () => { closeConfirm(); fn(); };
+  $("confirm-overlay").style.display = "flex";
+}
+function closeConfirm() { $("confirm-overlay").style.display = "none"; }
+
+// ── Add / Edit modal ───────────────────────────────────────────────────
+function buildProductGrid() {
+  const all = [...new Set([...allProducts(), ...selectedProducts])];
+  $("product-grid").innerHTML = all.map(p =>
+    `<span class="product-check ${selectedProducts.includes(p) ? "active" : ""}" data-p="${esc(p)}" onclick="toggleProduct(this)">${esc(p)}</span>`
+  ).join("") + `<input class="product-add" id="product-add" placeholder="+ add product, Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomProduct(this)}" />`;
+}
+function toggleProduct(el) {
+  const p = el.dataset.p; el.classList.toggle("active");
+  if (el.classList.contains("active")) selectedProducts.push(p); else selectedProducts = selectedProducts.filter(x => x !== p);
+}
+function addCustomProduct(input) {
+  const p = input.value.trim(); if (!p) return;
+  if (!selectedProducts.includes(p)) selectedProducts.push(p);
+  buildProductGrid(); $("product-add").focus();
+}
+function setFormType(t) {
+  formType = t;
+  $("type-opp").classList.toggle("active", t === "opp");
+  $("type-other").classList.toggle("active", t === "other");
+  document.querySelectorAll(".only-opp").forEach(e => e.style.display = t === "opp" ? "" : "none");
+  document.querySelectorAll(".only-other").forEach(e => e.style.display = t === "other" ? "" : "none");
+  $("lbl-title").textContent   = t === "opp" ? "Opportunity Name *" : "Title *";
+  $("lbl-account").textContent = t === "opp" ? "Account *" : "Requester / Account";
+  $("f-opportunity").placeholder = t === "opp" ? "e.g. Acme Corp — VIM S/4HANA" : "e.g. Q4 partner enablement deck";
+  $("f-account").placeholder     = t === "opp" ? "e.g. Acme Corp" : "optional";
+}
+const FORM_TEXT = { opportunity:"f-opportunity", account:"f-account", region:"f-region", value:"f-value", sfLink:"f-sflink", ceName:"f-ce", sseName:"f-sse", notesLink:"f-noteslink", nextStep:"f-nextstep", notes:"f-notes", category:"f-category", dueDate:"f-due" };
+function fillForm(o) {
+  Object.entries(FORM_TEXT).forEach(([k, id]) => $(id).value = o[k] || "");
+  $("f-stage").value    = o.stage || "1 - Identify Prospect";
+  $("f-priority").value = o.priority || "Medium";
+  $("f-action").value   = o.actionStatus || "Follow Up";
+  $("f-quarter").value  = o.quarter || "";
+  $("f-forecast").value = o.forecast || "";
+  $("f-status").value   = o.status || "Open";
+  $("flag-edit-row").style.display = o.flag ? "flex" : "none";
+  $("flag-edit-text").textContent = o.flag ? `${o.flag}${o.flagInfo ? " — " + o.flagInfo : ""}` : "";
+  buildProductGrid();
+}
+function openModal() {
+  editingId = null; selectedProducts = [];
+  $("modal-title").textContent = "New Item";
+  setFormType("opp"); fillForm({});
+  $("modal-overlay").style.display = "flex";
+}
+function openEdit(id) {
+  const o = opps.find(x => x.id === id); if (!o) return;
+  editingId = id; selectedProducts = [...(o.products || [])];
+  $("modal-title").textContent = isOpp(o) ? "Edit Opportunity" : "Edit Other Work";
+  setFormType(isOpp(o) ? "opp" : "other"); fillForm(o);
+  $("modal-overlay").style.display = "flex";
+}
+function closeModal() { $("modal-overlay").style.display = "none"; }
+function clearFlagFromModal() {
+  if (!editingId) return;
+  opps = opps.map(o => o.id === editingId ? { ...o, flag: null, flagInfo: null } : o);
+  $("flag-edit-row").style.display = "none"; afterDataChange(); showToast("Flag cleared");
+}
+function saveOpp() {
+  const title = $("f-opportunity").value.trim(), acc = $("f-account").value.trim();
+  if (!title) { showToast("A name is required", "error"); return; }
+  if (formType === "opp" && !acc) { showToast("Account is required for Salesforce opportunities", "error"); return; }
+  const existing = editingId ? opps.find(o => o.id === editingId) : null;
+  const isO = formType === "opp";
+  const record = {
+    ...(existing || {}),
+    id:           editingId || genId(),
+    type:         formType,
+    opportunity:  title,
+    account:      acc,
+    priority:     $("f-priority").value,
+    actionStatus: $("f-action").value,
+    dueDate:      $("f-due").value,
+    notesLink:    $("f-noteslink").value.trim(),
+    nextStep:     $("f-nextstep").value,
+    products:     [...selectedProducts],
+    notes:        $("f-notes").value,
+    stage:        isO ? $("f-stage").value : "",
+    region:       isO ? $("f-region").value : "",
+    value:        isO ? $("f-value").value : "",
+    sfLink:       isO ? $("f-sflink").value.trim() : "",
+    ceName:       isO ? $("f-ce").value : "",
+    sseName:      isO ? $("f-sse").value : "",
+    quarter:      isO ? $("f-quarter").value : "",
+    forecast:     isO ? $("f-forecast").value : "",
+    category:     isO ? "" : $("f-category").value.trim(),
+    status:       isO ? "Open" : $("f-status").value,
+    flag:         existing ? (existing.flag || null) : null,
+    flagInfo:     existing ? (existing.flagInfo || null) : null,
+  };
+  if (editingId) opps = opps.map(o => o.id === editingId ? record : o); else opps.push(record);
+  closeModal(); afterDataChange();
+  showToast(editingId ? "Updated" : "Added");
+}
+
+// ── Delete ─────────────────────────────────────────────────────────────
+function openDelete(id) { deleteId = id; $("delete-overlay").style.display = "flex"; }
+function closeDelete()  { deleteId = null; $("delete-overlay").style.display = "none"; }
+function confirmDelete() { opps = opps.filter(o => o.id !== deleteId); closeDelete(); afterDataChange(); showToast("Deleted"); }
+
+// ── Excel Export ───────────────────────────────────────────────────────
+function exportXLSX(filename) {
+  const rows = opps.map(o => ({
+    "Opportunity":     o.opportunity,
+    "Account":         o.account,
+    "Stage":           o.stage,
+    "Priority":        o.priority,
+    "Action Status":   o.actionStatus || "No Action",
+    "CE Name":         o.ceName    || "",
+    "SSE Name":        o.sseName   || "",
+    "Notes Link":      o.notesLink || "",
+    "Products":        (o.products || []).join(", "),
+    "Value ($)":       o.value,
+    "Next Step":       o.nextStep,
+    "Quarter":         o.quarter,
+    "Forecast":        o.forecast,
+    "Salesforce Link": o.sfLink,
+    "Region":          o.region,
+    "Notes":           o.notes,
+    "Flag":            o.flag || "",
+    "Type":            isOpp(o) ? "Salesforce Opp" : "Other Work",
+    "Category":        o.category || "",
+    "Status":          o.status || "Open",
+    "Due Date":        o.dueDate || "",
+    "Flag Info":       o.flagInfo || "",
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [30,25,15,10,15,20,20,40,40,12,40,12,40,15,50,40,14,16,18,10,12,40].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Opportunities");
+  XLSX.writeFile(wb, typeof filename === "string" ? filename : `presales-workload-${stamp()}.xlsx`);
+  if (typeof filename !== "string") showToast("Exported to Excel");
+}
+
+// ── Stage matching ─────────────────────────────────────────────────────
+function matchStageStrict(val) {
+  if (val === null || val === undefined || String(val).trim() === "") return null;
+  const v = String(val).trim();
+  if (STAGES.includes(v)) return v;
+  const lower = v.toLowerCase();
+  const ci = STAGES.find(s => s.toLowerCase() === lower); if (ci) return ci;
+  const noPrefix = lower.replace(/^\d+\s*[-–.]\s*/, "");
+  const textMatch = STAGES.find(s => s.toLowerCase().replace(/^\d+\s*[-–.]\s*/, "") === noPrefix); if (textMatch) return textMatch;
+  const num = v.match(/^(\d+)/);
+  if (num) { const byNum = STAGES.find(s => s.startsWith(parseInt(num[1]) + " -")); if (byNum) return byNum; }
+  if (/closed\s*won|^won$/.test(lower)) return "Won and Closed";
+  return null;
+}
+function matchStage(val) { return matchStageStrict(val) || "1 - Identify Prospect"; }
+
+// ── Excel Import (replace all) ─────────────────────────────────────────
+function openImportWarning()  { $("import-overlay").style.display = "flex"; }
+function closeImportWarning() { $("import-overlay").style.display = "none"; }
+function proceedImport()      { closeImportWarning(); $("import-file").click(); }
+function cellDay(v) {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "number" && v > 20000) return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v || "")); return m ? m[1] : "";
+}
+function importXLSX(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: "array" });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      const imported = rows.map(r => {
+        const other = /other/i.test(String(r["Type"] || ""));
+        return {
+          id: genId(), type: other ? "other" : "opp",
+          opportunity:  String(r["Opportunity"] || ""),
+          account:      String(r["Account"] || ""),
+          stage:        other ? "" : matchStage(r["Stage"]),
+          priority:     ["High","Medium","Low"].includes(r["Priority"]) ? r["Priority"] : "Medium",
+          actionStatus: ACTION_STATUSES.includes(r["Action Status"]) ? r["Action Status"] : "Follow Up",
+          ceName:       r["CE Name"] || r["AE Name"] || "",
+          sseName:      r["SSE Name"] || "",
+          notesLink:    r["Notes Link"] || "",
+          products:     r["Products"] ? String(r["Products"]).split(",").map(p => p.trim()).filter(Boolean) : [],
+          value:        r["Value ($)"] !== undefined && r["Value ($)"] !== "" ? amountStr(r["Value ($)"]) : "",
+          nextStep:     r["Next Step"] || "",
+          quarter:      normQuarter(r["Quarter"]),
+          forecast:     r["Forecast"] || "",
+          sfLink:       r["Salesforce Link"] || "",
+          region:       r["Region"] || "",
+          notes:        r["Notes"] || "",
+          flag:         r["Flag"] || null,
+          flagInfo:     r["Flag Info"] || null,
+          category:     r["Category"] || "",
+          status:       r["Status"] === "Done" ? "Done" : "Open",
+          dueDate:      cellDay(r["Due Date"]),
+        };
+      }).filter(o => o.opportunity);
+      opps = imported; afterDataChange();
+      showToast(`Imported ${imported.length} items`);
+    } catch (err) { console.error(err); showToast("Import failed — check file format", "error"); }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = "";
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Salesforce sync (in-browser replacement for sync_workload_v3.py)
+// ═══════════════════════════════════════════════════════════════════════
+const SF_MAP = {   // report column → tracker field
+  "Opportunity Name":              "opportunity",
+  "Opportunity: Account":          "account",
+  "Stage":                         "stage",
+  "Opportunity Owner":             "ceName",
+  "Forecasted Amount (converted)": "value",
+  "Fiscal Period":                 "quarter",
+  "Forecast Category":             "forecast",
+  "Sub Sales Region":              "region",
+  "Opportunity URL":               "sfLink",
+};
+const SYNC_FIELDS = [   // fields a sync may update on a matched opp (your presales fields are never touched)
+  ["account","Account"], ["stage","Stage"], ["ceName","CE"], ["value","Value"], ["quarter","Quarter"],
+  ["forecast","Forecast"], ["region","Region"], ["sfLink","Salesforce link"],
+];
+const ALLOW_BLANK = new Set(["forecast", "value"]);
+
+function handleSyncPick(e) { const f = e.target.files[0]; e.target.value = ""; if (f) startSync(f); }
+
+async function readReportRows(file) {
+  const buf = await file.arrayBuffer();
+  const head = new TextDecoder("latin1").decode(new Uint8Array(buf.slice(0, 4096)));
+  if (/<table|<html/i.test(head) || /\.html?$/i.test(file.name)) {
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { text = new TextDecoder("windows-1252").decode(buf); }
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    const rows = [...doc.querySelectorAll("tr")].filter(tr => !tr.querySelector("tr"))
+      .map(tr => [...tr.children].filter(c => /^t[dh]$/i.test(c.tagName)).map(c => c.textContent.replace(/\s+/g, " ").trim()));
+    if (!rows.length) throw new Error("No table found in the report file.");
+    return rows;
+  }
+  const wb = XLSX.read(buf, { type: "array" });
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+}
+
+async function parseReport(file) {
+  const rows = await readReportRows(file);
+  const hi = rows.findIndex(r => r.some(c => String(c).trim().toLowerCase() === "opportunity name"));
+  if (hi < 0) throw new Error("Couldn't find an “Opportunity Name” column — is this the right report?");
+  const hdr = rows[hi].map(h => String(h).trim().toLowerCase());
+  const idx = {}, missing = [];
+  Object.keys(SF_MAP).forEach(col => { const i = hdr.indexOf(col.toLowerCase()); if (i >= 0) idx[col] = i; else missing.push(col); });
+  const present = new Set(Object.keys(idx).map(c => SF_MAP[c]));
+  const records = [];
+  rows.slice(hi + 1).forEach(r => {
+    const rec = {};
+    Object.entries(idx).forEach(([col, i]) => { rec[SF_MAP[col]] = String(r[i] ?? "").trim(); });
+    if (!rec.opportunity) return;       // blank / subtotal / footer rows
+    if (present.has("value"))   rec.value   = amountStr(rec.value);
+    if (present.has("quarter")) rec.quarter = normQuarter(rec.quarter);
+    records.push(rec);
+  });
+  if (!records.length) throw new Error("The report has headers but no opportunity rows.");
+  return { records, present, missing };
+}
+
+function planSync(rep) {
+  const sfOpps = opps.filter(isOpp);
+  const byId = new Map(), byName = new Map(), matched = new Set();
+  sfOpps.forEach(o => {
+    const id = sfId(o.sfLink); if (id && !byId.has(id)) byId.set(id, o);
+    const k = norm(o.opportunity); if (k) { if (!byName.has(k)) byName.set(k, []); byName.get(k).push(o); }
+  });
+  const plan = { merged: new Map(), changed: [], added: [], flagged: [], unchanged: 0, byId: 0, byName: 0, warnings: [], notInReport: 0, total: rep.records.length };
+  if (rep.missing.length) plan.warnings.push(`The report has no column for: ${rep.missing.join(", ")}. Those fields are left unchanged.`);
+
+  rep.records.forEach(r => {
+    const rid = sfId(r.sfLink);
+    let target = rid ? byId.get(rid) : null, how = "id";
+    if (target && matched.has(target.id)) target = null;
+    if (!target) {
+      how = "name";
+      target = (byName.get(norm(r.opportunity)) || []).find(o => { const oid = sfId(o.sfLink); return !matched.has(o.id) && (!oid || !rid || oid === rid); });
+    }
+    const stageNew = rep.present.has("stage") ? matchStageStrict(r.stage) : null;
+    if (rep.present.has("stage") && r.stage && !stageNew) plan.warnings.push(`Unrecognised stage “${r.stage}” on “${r.opportunity}” — ${target ? "kept the existing stage" : "added at stage 1"}.`);
+
+    if (!target) {  // new opportunity
+      plan.added.push({
+        id: genId(), type: "opp", opportunity: r.opportunity, account: r.account || "", stage: stageNew || "1 - Identify Prospect",
+        priority: "Medium", actionStatus: "Follow Up", ceName: r.ceName || "", sseName: "", notesLink: "", products: [],
+        value: r.value || "", nextStep: "", quarter: r.quarter || "", forecast: r.forecast || "", sfLink: r.sfLink || "",
+        region: r.region || "", notes: "", flag: null, flagInfo: null, category: "", status: "Open", dueDate: "",
+      });
+      return;
+    }
+    matched.add(target.id); plan[how === "id" ? "byId" : "byName"]++;
+    const upd = { ...target }, changes = [];
+    if (how === "id" && rep.present.has("opportunity") && r.opportunity !== target.opportunity) {
+      changes.push({ label: "Name", from: target.opportunity, to: r.opportunity }); upd.opportunity = r.opportunity;
+    }
+    SYNC_FIELDS.forEach(([f, label]) => {
+      if (!rep.present.has(f)) return;
+      let nv = f === "stage" ? stageNew : r[f];
+      if (f === "stage" && !nv) return;                       // unrecognised → keep
+      if ((nv === "" || nv === null || nv === undefined) && !ALLOW_BLANK.has(f)) return;
+      const ov = target[f];
+      const same = f === "value" ? (parseAmount(ov) || 0) === (parseAmount(nv) || 0) : norm(ov) === norm(nv);
+      if (!same) { changes.push({ label, from: f === "value" ? fmt(ov) : (ov || "—"), to: f === "value" ? fmt(nv) : (nv || "—") }); upd[f] = nv; }
+    });
+    // Flags — recalculated every sync, compared with the values before this sync
+    const flags = [], info = [];
+    const ov = parseAmount(target.value), nv = parseAmount(upd.value);
+    if (ov !== null && nv !== null && ov !== 0 && Math.abs((nv - ov) / ov) >= 1) { flags.push("🚩 Value"); info.push(`Value ${fmtK(ov)} → ${fmtK(nv)}`); }
+    const oq = norm(target.quarter), nq = norm(upd.quarter);
+    if (oq && nq && oq !== nq) { flags.push("🚩 Pushed"); info.push(`Pushed ${target.quarter} → ${upd.quarter}`); }
+    upd.flag = flags.length ? flags.join("  ") : null;
+    upd.flagInfo = info.length ? info.join("; ") : null;
+    plan.merged.set(target.id, upd);
+    if (flags.length) plan.flagged.push({ name: upd.opportunity, flag: upd.flag, info: upd.flagInfo });
+    if (changes.length) plan.changed.push({ name: upd.opportunity, changes }); else plan.unchanged++;
+  });
+
+  plan.notInReport = sfOpps.filter(o => !matched.has(o.id)).length;
+  const dupes = rep.records.length - new Set(rep.records.map(r => sfId(r.sfLink) || norm(r.opportunity))).size;
+  if (dupes > 0) plan.warnings.push(`${dupes} duplicate row${dupes > 1 ? "s" : ""} in the report (same opportunity listed more than once).`);
+  const noLink = rep.records.filter(r => rep.present.has("sfLink") && !sfId(r.sfLink)).length;
+  if (rep.present.has("sfLink") === false) plan.warnings.push("The report has no Opportunity URL, so matching is by name only — a renamed opportunity would appear as new.");
+  else if (noLink) plan.warnings.push(`${noLink} report row${noLink > 1 ? "s have" : " has"} no recognisable Salesforce ID in the URL; those match by name only.`);
+  return plan;
+}
+
+async function startSync(file) {
+  try {
+    const rep = await parseReport(file);
+    syncPlan = planSync(rep); syncFileName = file.name;
+    showSyncPreview(syncPlan);
+  } catch (err) { console.error(err); showToast(err.message || "Couldn't read that report", "error"); }
+}
+
+function showSyncPreview(p) {
+  const tile = (n, l, cls = "") => `<div class="sync-tile ${cls}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const sec = (title, inner) => inner ? `<div class="sync-sec"><h4>${title}</h4>${inner}</div>` : "";
+  const warn = p.warnings.map(w => `<div class="sync-warn">⚠ ${esc(w)}</div>`).join("");
+  const flagged = p.flagged.map(f => `<div class="sync-item">${esc(f.flag)} &nbsp;<strong>${esc(f.name)}</strong><div class="sub">${esc(f.info)}</div></div>`).join("");
+  const added = p.added.map(o => `<div class="sync-item">+ <strong>${esc(o.opportunity)}</strong> <span class="sub">${esc(o.account)} · ${esc(o.stage)} · ${fmt(o.value)} · ${esc(o.quarter || "no quarter")}</span></div>`).join("");
+  const changed = p.changed.map(c => `<div class="sync-item"><details><summary>${esc(c.name)} <span class="sub">(${c.changes.length} change${c.changes.length > 1 ? "s" : ""})</span></summary>${
+    c.changes.map(x => `<div class="chg"><b>${esc(x.label)}:</b> ${esc(x.from)} → ${esc(x.to)}</div>`).join("")}</details></div>`).join("");
+  $("sync-title").textContent = `Sync preview — ${syncFileName}`;
+  $("sync-body").innerHTML = `
+    <div class="sync-tiles">
+      ${tile(p.changed.length, "Updated")}${tile(p.added.length, "New")}${tile(p.flagged.length, "🚩 Flagged", "flag")}
+      ${tile(p.unchanged, "No change")}${tile(p.notInReport, "Not in report")}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${p.total} rows read from the report · matched ${p.byId} by Salesforce ID, ${p.byName} by name. Opportunities not in the report are kept as-is; your own fields (priority, action, products, notes, next step, SSE…) and all Other Work items are never touched.</div>
+    ${warn}
+    ${sec("Flagged", flagged)}${sec("New opportunities", added)}${sec("Updated", changed)}
+    ${!p.changed.length && !p.added.length ? `<div class="sync-warn" style="background:var(--p50);border-color:var(--line);color:var(--muted)">Nothing differs from your current data. Applying will clear any existing flags.</div>` : ""}`;
+  $("sync-overlay").style.display = "flex";
+}
+function closeSync() { $("sync-overlay").style.display = "none"; syncPlan = null; }
+
+function applySync() {
+  const p = syncPlan; if (!p) return;
+  if ($("sync-backup").checked) exportXLSX(`presales-workload-backup-${stamp()}.xlsx`);
+  lsSet(SNAP_KEY, { at: new Date().toISOString(), opps, meta });
+  opps = opps.map(o => p.merged.has(o.id) ? p.merged.get(o.id) : (isOpp(o) ? { ...o, flag: null, flagInfo: null } : o)).concat(p.added);
+  meta = { ...meta, lastSync: new Date().toISOString() }; lsSet(META_KEY, meta);
+  $("sync-overlay").style.display = "none"; syncPlan = null;
+  afterDataChange();
+  showToast(`Synced: ${p.changed.length} updated, ${p.added.length} new, ${p.flagged.length} flagged`);
+}
+function undoSync() {
+  const snap = lsGet(SNAP_KEY, null); if (!snap) return;
+  askConfirm("Undo last sync?", `This restores your data to how it was before the sync on ${new Date(snap.at).toLocaleString()}. Anything you changed since then will be lost.`, "Undo sync", () => {
+    opps = snap.opps || []; meta = snap.meta || {};
+    lsSet(META_KEY, meta);
+    try { localStorage.removeItem(SNAP_KEY); } catch {}
+    afterDataChange(); showToast("Sync undone");
+  });
+}
+
+// Drag the report anywhere onto the page
+(function () {
+  let depth = 0;
+  const hint = $("drop-hint");
+  const hasFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
+  window.addEventListener("dragenter", e => { if (hasFiles(e)) { depth++; hint.style.display = "flex"; } });
+  window.addEventListener("dragleave", e => { if (hasFiles(e) && --depth <= 0) { depth = 0; hint.style.display = "none"; } });
+  window.addEventListener("dragover",  e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener("drop", e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); depth = 0; hint.style.display = "none";
+    const f = e.dataTransfer.files[0]; if (f) startSync(f);
+  });
+})();
+
+// ── Init & migration ───────────────────────────────────────────────────
+function migrateData() {
+  let changed = false;
+  opps = opps.map(o => {
+    const q = normQuarter(o.quarter);
+    let ceName = o.ceName;
+    if (ceName === undefined && o.aeName !== undefined) ceName = o.aeName;
+    const n = {
+      ...o, quarter: q, flag: o.flag || null, flagInfo: o.flagInfo || null, ceName: ceName || "", sseName: o.sseName || "",
+      type: o.type || "opp", category: o.category || "", status: o.status || "Open", dueDate: o.dueDate || "",
+    };
+    if (n.quarter !== o.quarter || n.type !== o.type || n.ceName !== o.ceName || n.status !== o.status) changed = true;
+    return n;
+  });
+  if (changed) saveData();
+}
+
+loadData();
+migrateData();
+refreshOptions();
+applyDensity();
+setView(["today","table","stages","kanban","report"].includes(ui.view) ? ui.view : "table");
+</script>
+</body>
+</html>
